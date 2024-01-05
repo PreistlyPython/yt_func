@@ -1,5 +1,5 @@
 # yt_func
-This python program was made to gather from YouTube using the YouTubeData v3 API, analyze that data with the Open AI API and congregate all data into a single file for a custom GPT's.
+This python program was made to gather data from YouTube using the YouTubeData v3 API, analyze that data with the Open AI API and congregate all data into a single file for a OpenAI's custom "GPTs".
 
 And it does alll of that, plus a few charting functions for visualizing data. 
 
