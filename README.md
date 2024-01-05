@@ -15,13 +15,15 @@ yt = yt_func()
 topics = [dogs, rare dogs, hunting dogs]
 
 #get the top videos for each topic (10 videos by default)
+
 for topic in topics:
   yt.get_top_videos(topic)
 
 #save data to file
+
 yt.save_video_data_to_csv("dogs.csv")
 
-AFter it is saved if you want to harvest data over time you can this function
+After it is saved if you want to harvest data over time you can this function
 
 yt.update_and_save("dogs_2.0.csv", "dogs.csv")
 
