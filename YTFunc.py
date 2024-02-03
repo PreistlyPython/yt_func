@@ -3316,32 +3316,10 @@ yt = YTFunc()
 #yt.load_video_data_from_csv("LoL_strat_ts.csv")
 #yt.analyze_transcripts()
 
-yt.load_video_data_from_csv("affiliate_marketing_0.csv")
+
+yt.merge_csv_files(["seo_1_c.csv", "seo_1_ts.csv"]).to_csv("seo_1_c_ts.csv")
 
 
-transcripts = yt.get_data_from_column("transcript")
-
-print(transcripts)
-
-yt.save_data_to_txt(transcripts, "affiliate_marketing_transcripts_0.txt")
-yt.video_data = {}
-
-yt.update_and_save(10,  "affiliate_marketing_1.csv",  "affiliate_marketing_0.csv")
-
-
-topics = ["seo optimization", "seo ai tacticts", "seo strategy"]
-yt.video_data = {}
-
-for topic in topics:
-    yt.get_top_videos(topic, 20)
-
-yt.get_all_comments()
-
-comments = yt.get_data_from_column("comment_log")
-print(comments)
-yt.save_data_to_txt(comments, "seo_0_c.txt")
-
-yt.save_video_data_to_csv("seo_c_0.csv")
 
 
 
