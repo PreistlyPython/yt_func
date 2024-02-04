@@ -49,7 +49,7 @@ from dotenv import load_dotenv
 #nltk.download('stopwords')
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-class YTFunc():
+class yt_func():
     def __init__(self):
         """
         Initializes the YTFunc class with necessary attributes for processing YouTube videos.
