@@ -28,8 +28,8 @@ After it is saved if you want to harvest data over time you can this function
 
   yt.update_and_save("dogs_2.0.csv", "dogs.csv")
 
-This will add 10 more videos using the same exact subjects from the earlier run.
-
+This will add 10 more videos using the same exact subjects from the earlier run, 
+with an optional KWARG parameter to specify number of videos.
 
 
 
