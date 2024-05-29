@@ -9,23 +9,24 @@ All of the code was generated using gpt-4. Curated and assembled and debugged by
 
 example usage
 
-yt = yt_func()
+  yt = yt_func()
 
 #topics to search videos for
-topics = [dogs, rare dogs, hunting dogs]
+
+  topics = [dogs, rare dogs, hunting dogs]
 
 #get the top videos for each topic (10 videos by default)
 
-for topic in topics:
-  yt.get_top_videos(topic)
+  for topic in topics:
+    yt.get_top_videos(topic)
 
 #save data to file
 
-yt.save_video_data_to_csv("dogs.csv")
+  yt.save_video_data_to_csv("dogs.csv")
 
 After it is saved if you want to harvest data over time you can this function
 
-yt.update_and_save("dogs_2.0.csv", "dogs.csv")
+  yt.update_and_save("dogs_2.0.csv", "dogs.csv")
 
 This will add 10 more videos using the same exact subjects from the earlier run.
 
