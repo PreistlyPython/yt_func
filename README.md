@@ -1,6 +1,8 @@
 # yt_func
 This python program was made to gather data from YouTube using the YouTubeData v3 API, analyze that data with the Open AI API and congregate all data into a single file for a OpenAI's custom "GPTs".
 
+Video Tutorial: https://youtu.be/L3U1n6r-k-I
+
 And it does alll of that, plus a few charting functions for visualizing data. 
 
 To run the code you'll have to have an Google API Key and Open AI API Key.
