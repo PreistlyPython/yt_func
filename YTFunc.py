@@ -47,6 +47,7 @@ from pytube import YouTube
 import ffmpeg
 import subprocess
 import yt_dlp
+import base64
 
 
 
@@ -962,6 +963,66 @@ class YTFunc():
         except subprocess.CalledProcessError as e:
             logging.error(f"An error occurred while extracting images: {e}")
             raise
+    
+    def list_png_files(self, directory):
+        """
+        List all .png files in the specified directory.
+
+        Args:
+            directory (str): The path to the directory to list files from.
+
+        Returns:
+            list: A list of file paths to .png files in the directory.
+        """
+        if not os.path.isdir(directory):
+            raise ValueError(f"The provided path {directory} is not a valid directory.")
+        
+        png_files = [os.path.join(directory, f) for f in os.listdir(directory) if f.endswith('.png')]
+        return png_files
+    
+
+    def analyze_image(self, image_path, prompt="Explain thoroughly yet concisely exactly what is taking place within this frame of a video."):
+        with open(image_path, "rb") as image_file:
+            base64_image = base64.b64encode(image_file.read()).decode('utf-8')
+        
+        payload = {
+            "model": "gpt-4-turbo",
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": prompt},
+                        {"type": "image_url", "image_url": f"data:image/png;base64,{base64_image}"}
+                    ],
+                }
+            ],
+            "max_tokens": 300
+        }
+
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {openai.api_key}"
+        }
+
+        response = requests.post("https://api.openai.com/v1/chat/completions", headers=headers, json=payload)
+
+        if response.status_code == 200:
+            return response.json()["choices"][0]["message"]["content"]
+        else:
+            raise Exception(f"API request failed with status code {response.status_code}: {response.text}")
+
+    def process_images_in_directory(self,directory, prompt="Explain thoroughly yet concisely exactly what is taking place within this frame of a video."):
+        png_files = self.list_png_files(directory)
+        results = {}
+        for image_path in png_files:
+            try:
+                result = self.analyze_image(image_path, prompt)
+                results[os.path.basename(image_path)] = result
+            except Exception as e:
+                print(f"An error occurred while analyzing {image_path}: {e}")
+        
+        self.save_dict_to_csv(results, "image analysis of " + directory +".csv")
+        return results
 
     def is_video_valid(self, video_id):
         transcript_available = self.is_transcript_available(video_id)
@@ -3441,6 +3502,23 @@ class YTFunc():
             return
         return data_list
     
+    def save_dict_to_csv(data, filename="results.csv"):
+        """
+        Saves a dictionary to a CSV file.
+
+        Args:
+            data (dict): The dictionary to save, where keys are file paths and values are analysis results.
+            filename (str): The name of the CSV file to save. Default is 'results.csv'.
+        """
+        with open(filename, mode='w', newline='', encoding='utf-8') as file:
+            writer = csv.writer(file)
+            writer.writerow(["File Path", "Analysis Result"])  # Write header
+
+            for key, value in data.items():
+                writer.writerow([key, value])
+
+        print(f"Dictionary saved to {filename}")
+
     def save_data_to_txt(self, data, file_name, directory=None,):
         """Save data from a column/field to a .txt file.
 
@@ -3680,4 +3758,6 @@ yt = YTFunc()
 #yt.oai_thumbnails_to_csv(20, "video_ads_0_thumbnail_analysis.csv")
 
 #yt.download_video("https://www.youtube.com/watch?v=Fxe5ImKqBA4", "jack_gordon_tikok_algorithm.mp4")
-yt.extract_images("/home/dell/Videos/yt-dl/jack_gordon_tiktok_algorithm.mp4", "video_frames_extraction_10fps", fps = 10, duration = 10)
+#yt.extract_images("/home/dell/Videos/yt-dl/jack_gordon_tikok_algorithm.mp4", "video_frames_extraction_10fps", fps = 10, duration = 10)
+
+yt.process_images_in_directory("video_frames_extraction_10fps")
