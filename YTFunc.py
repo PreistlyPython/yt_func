@@ -43,6 +43,11 @@ from PIL import Image
 import shutil
 from PyPDF2 import PdfReader, PdfWriter
 from dotenv import load_dotenv
+from pytube import YouTube
+import ffmpeg
+import subprocess
+import yt_dlp
+
 
 
 #.download('punkt')
@@ -57,14 +62,18 @@ class YTFunc():
         Initializes the YTFunc class with necessary attributes for processing YouTube videos.
         Loads the NLP model, sets API keys, and initializes various attributes for video data management.
         """
-        os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "C:\Python\gold-episode-404807-f2668d34aa21.json"
+        os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "/home/dell/Python/gold-episode-404807-f2668d34aa21.json"
         self.nlp = spacy.load("en_core_web_sm")
         self.video_data = {} # a dictionary of keys = video_ids values = dictionarys containing data relating to video.
         self.yt_v3_key = os.getenv("GOOGLE_API_KEY")
         self.openai_key =  os.getenv("OPENAI_API_KEY")
         self.youtube = build('youtube', 'v3', developerKey = self.yt_v3_key)
         openai.api_key = self.openai_key
-        self.gpt_client = OpenAI(api_key=self.openai_key)
+        self.gpt_client = openai.OpenAI(
+        api_key=self.openai_key,
+        organization='org-zlvexewsMwb1sDoESZRaNq6u',
+        project='proj_Y9r8e8wUWckQGpcx316JvNq7'
+        )
         self.valid_videos = [] 
         self.pp = pprint.PrettyPrinter(indent=4)
         self.last_subject_searched = ''
@@ -92,10 +101,24 @@ class YTFunc():
         #nltk.download('averaged_perceptron_tagger')
         #self.number_of_videos_max = number_of_videos_max
     
+    def get_channel_id(self, username):
+        request = self.youtube.channels().list(
+        part='id',
+        forUsername=username
+        )
+        response = request.execute()
+        if 'items' in response and response['items']:
+            print("Channel ID: " + response['items'][0]['id'])
+            return response['items'][0]['id']
+        else:
+            print("No channel ID found")
+            return None
+        
     def get_top_videos_channel(self, channel_id, query, max_results = 10, next_page_token = None): # Find top (max_results) videos based on views and using (next_page_token). Retuns list of video ids
         """
         Search YouTube API for top videos by viewCount on a given query.
         Handles pagination with next page token.
+        use get_channel_id("youtube_account_name") for the first parameter channel_id
         Returns a list of video IDs up to max_results.
         """
         self.logger.info("Starting search for top videos for query: '%s'", query)
@@ -183,7 +206,7 @@ class YTFunc():
             self.logger.info("Found %d valid videos for query: '%s'", len(valid_videos), query)
             self.load_data_from_ids(valid_videos)
 
-        self.logger.info(f"get_top_videos() is now Returning top videos from {chanel_id} a list of video ids")
+        self.logger.info(f"get_top_videos() is now Returning top videos from {channel_id} a list of video ids")
         return valid_videos
     
     def get_recent_videos(self, query, max_results = 10, next_page_token = None, time_frame = "week"):
@@ -243,6 +266,8 @@ class YTFunc():
             finally:
                 search_attempt += 1
                 self.pp.pprint(search_attempt)
+        
+        return valid_videos
 
     def _get_published_after(self, time_frame):
         """
@@ -266,6 +291,7 @@ class YTFunc():
     
     def get_top_videos_by_likes(self, query, max_results=10, next_page_token=None):
         """
+
         Search YouTube API for top videos by likeCount on a given query.
         Handles pagination with next page token.
         Returns a list of video IDs up to max_results.
@@ -284,7 +310,7 @@ class YTFunc():
                     part='snippet',
                     type='video',
                     maxResults=max_results,
-                    order='likeCount',  # Changed from 'viewCount' to 'likeCount'
+                    order='likeCount',  # Changed from 'viewCount' to 'likeCount' - 'likeCount' not recognized to sorty
                     pageToken=next_page_token
                 )
                 response = request.execute()
@@ -407,6 +433,11 @@ class YTFunc():
 
         self.logger.info("get_top_videos() is complete. Returning top videos as a list of video ids")
         self.logger.info(f"list of video ids: {valid_videos}")
+        
+        if valid_videos:
+                self.logger.info("Found %d valid videos for query: '%s'", len(valid_videos), query)
+                self.load_data_from_ids(valid_videos)
+
         return valid_videos
     
     def get_playlist_id(self, channel_name):
@@ -732,6 +763,205 @@ class YTFunc():
         except pytube_exceptions.PytubeError as e:
             print(f"Error checking downloadability for video ID {video_id}: {e}")
             return False
+        
+   
+
+
+    def download_youtube_audio_clip(self, url, output_filename, start_time=None, end_time=None):
+        download_dir = os.path.expanduser("~/Music/yt-dl")
+        
+        if not os.path.exists(download_dir):
+            os.makedirs(download_dir)
+            logging.info(f"Created directory {download_dir}.")
+        
+        try:
+            logging.info("Starting download of YouTube audio.")
+            download_path = self._download_with_ytdlp(url, download_dir, is_audio=True, output_filename=output_filename)
+            logging.info(f"Downloaded audio to {download_path}")
+
+            try:
+                output_path = os.path.join(download_dir, output_filename)
+                
+                if start_time and end_time:
+                    logging.info("Trimming the audio.")
+                    input_audio = ffmpeg.input(download_path, ss=start_time, to=end_time)
+                    ffmpeg.output(input_audio, output_path, format='mp3').run(overwrite_output=True)
+                    logging.info(f"Trimmed audio saved to {output_path}.")
+                else:
+                    os.rename(download_path, output_path)
+                    logging.info(f"Full audio saved to {output_path} without trimming.")
+                    
+            except ffmpeg.Error as e:
+                logging.error(f"FFmpeg error: {e}")
+                raise
+
+        except Exception as e:
+            logging.error(f"An error occurred: {e}")
+            raise
+
+    def download_video(self, url, output_filename=None):
+        download_dir = os.path.expanduser("~/Videos/yt-dl")
+        
+        if not os.path.exists(download_dir):
+            os.makedirs(download_dir)
+            logging.info(f"Created directory {download_dir}.")
+
+        try:
+            logging.info("Starting download of YouTube video.")
+            download_path = self._download_with_ytdlp(url, download_dir, is_audio=False, output_filename=output_filename)
+            logging.info(f"Downloaded video to {download_path}")
+
+        except Exception as e:
+            logging.error(f"An error occurred: {e}")
+            raise
+
+    def _download_with_ytdlp(self, url, download_dir, is_audio=True, output_filename=None):
+        try:
+            if output_filename:
+                base, ext = os.path.splitext(output_filename)
+                if not ext:
+                    ext = ".mp4" if not is_audio else ".mp3"
+                ydl_opts = {
+                    'format': 'bestaudio/best' if is_audio else 'bestvideo+bestaudio/best',
+                    'outtmpl': os.path.join(download_dir, f'{base}{ext}'),
+                    'postprocessors': [{'key': 'FFmpegExtractAudio', 'preferredcodec': 'mp3', 'preferredquality': '192'}] if is_audio else [],
+                    'merge_output_format': 'mp4' if not is_audio else None
+                }
+            else:
+                ydl_opts = {
+                    'format': 'bestaudio/best' if is_audio else 'bestvideo+bestaudio/best',
+                    'outtmpl': os.path.join(download_dir, '%(title)s.%(ext)s'),
+                    'postprocessors': [{'key': 'FFmpegExtractAudio', 'preferredcodec': 'mp3', 'preferredquality': '192'}] if is_audio else [],
+                    'merge_output_format': 'mp4' if not is_audio else None
+                }
+
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                ydl.download([url])
+
+            downloaded_file = None
+            for file in os.listdir(download_dir):
+                if (is_audio and file.endswith(".mp3")) or (not is_audio and file.endswith(".mp4")):
+                    downloaded_file = os.path.join(download_dir, file)
+                    break
+
+            if not downloaded_file:
+                raise FileNotFoundError("Downloaded file not found.")
+
+            return downloaded_file
+
+        except Exception as e:
+            logging.error(f"An error occurred during download: {e}")
+            raise
+
+
+
+    def download_youtube_video_clip(url, start_time, end_time, output_filename="video_clip.mp4"):
+        """
+        Downloads a specific segment of a YouTube video.
+
+        Args:
+            url (str): The URL of the YouTube video.
+            start_time (str): The start time of the clip in the format 'HH:MM:SS'.
+            end_time (str): The end time of the clip in the format 'HH:MM:SS'.
+            output_filename (str): The filename to save the trimmed video.
+
+        Returns:
+            None
+        """
+        # Directory where the full YouTube video will be downloaded
+        download_dir = os.path.expanduser("~/Videos/yt-dl")
+        
+        # Ensure the directories exist
+        if not os.path.exists(download_dir):
+            os.makedirs(download_dir)
+            logging.info(f"Created directory {download_dir}.")
+        
+        try:
+            # Download the video
+            logging.info("Starting download of YouTube video.")
+            ydl_opts = {
+                'format': 'bestvideo+bestaudio/best',
+                'outtmpl': os.path.join(download_dir, '%(title)s.%(ext)s'),
+                'merge_output_format': 'mp4'
+            }
+
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                ydl.download([url])
+            
+            # Find the downloaded file
+            download_path = None
+            for file in os.listdir(download_dir):
+                if file.endswith(".mp4"):
+                    download_path = os.path.join(download_dir, file)
+                    break
+
+            if not download_path:
+                raise FileNotFoundError("Downloaded video file not found.")
+            
+            logging.info(f"Downloaded video to {download_path}.")
+
+            try:
+                # Full path for the trimmed video output
+                output_path = os.path.join(download_dir, output_filename)
+                
+                # Trim the video using FFmpeg
+                logging.info("Trimming the video.")
+                input_video = ffmpeg.input(download_path, ss=start_time, to=end_time)
+                # Ensure the output is in a widely compatible format like MP4
+                ffmpeg.output(input_video, output_path, format='mp4').run(overwrite_output=True)
+                logging.info(f"Trimmed video saved to {output_path}.")
+
+            except ffmpeg.Error as e:
+                logging.error(f"FFmpeg error: {e}")
+                raise
+
+        except Exception as e:
+            logging.error(f"An error occurred: {e}")
+            raise
+
+    def extract_images(self, video_path, output_dir, fps=3, duration=None, start_time=0):
+        """
+        Extracts images from a video file at a specified number of frames per second.
+
+        Args:
+            video_path (str): The path to the video file.
+            output_dir (str): The directory to save the extracted images.
+            fps (int): The number of frames to extract per second. Default is 3.
+            duration (int, optional): The duration (in seconds) to extract frames from. If not specified, extraction continues until the end of the video.
+            start_time (int): The start time (in seconds) to begin extraction. Default is 0.
+
+        Raises:
+            subprocess.CalledProcessError: If the ffmpeg command fails.
+        """
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir)
+            logging.info(f"Created directory {output_dir}.")
+        
+        # Construct the ffmpeg command
+        if duration:
+            command = [
+                'ffmpeg',
+                '-ss', str(start_time),
+                '-i', video_path,
+                '-t', str(duration),
+                '-vf', f'fps={fps}',
+                os.path.join(output_dir, 'frame_%04d.png')
+            ]
+        else:
+            command = [
+                'ffmpeg',
+                '-ss', str(start_time),
+                '-i', video_path,
+                '-vf', f'fps={fps}',
+                os.path.join(output_dir, 'frame_%04d.png')
+            ]
+        
+        try:
+            subprocess.run(command, check=True)
+            logging.info(f"Extracted images to {output_dir}")
+        except subprocess.CalledProcessError as e:
+            logging.error(f"An error occurred while extracting images: {e}")
+            raise
 
     def is_video_valid(self, video_id):
         transcript_available = self.is_transcript_available(video_id)
@@ -848,7 +1078,7 @@ class YTFunc():
                             logging.info(f"Asking for: {prompt}")
                             full_text = self.script_pre_prompt + str(transcript) + self.script_post_prompt + prompt
                             script_response = self.gpt_client.chat.completions.create(
-                                model="gpt-3.5-turbo",
+                                model="gpt-4o-mini",
                                 messages=[
                                     {"role": "system", "content": "You are an expert at video content creation and a YouTube Script Analyst"},
                                     {"role": "user", "content": full_text}
@@ -909,16 +1139,17 @@ class YTFunc():
                     logging.info(f"Analyzing comments from video: {video_data.get('title', 'Unknown Title')}")
 
                     comments_text = " ".join(comments)
-                    prompt = "Analyze the following comments from a YouTube video and summarize what viewers liked and disliked about the video content. Give any relevant or useful infomration and feedback."
+                    prompt = "Analyze the following comments from a YouTube video to identify and summarize key themes, popular opinions, and frequent complaints. Provide detailed feedback on what viewers liked and disliked, and offer actionable insights for creating new content that aligns with audience preferences and addresses common criticisms."
+
 
                     retry_attempt = 0
                     delay = base_delay
                     while retry_attempt < max_retries:
                         try:
                             analysis_request = self.gpt_client.chat.completions.create(
-                                model="gpt-3.5-turbo",
+                                model="gpt-4o-mini",
                                 messages=[
-                                    {"role": "system", "content": "You are an expert at analyzing online comments and providing insightful summaries."},
+                                    {"role": "system", "content": "You are an expert at analyzing audience sentiments and providing valuable insightful summaries."},
                                     {"role": "user", "content": prompt + "\n\n" + comments_text}
                                 ]
                             )
@@ -1020,7 +1251,7 @@ class YTFunc():
         """
         try:
             response = self.gpt_client.chat.completions.create(
-                model="gpt-4-vision-preview",
+                model="gpt-4o-mini",
                 messages=[
                     {
                     "role": "user",
@@ -1307,20 +1538,22 @@ class YTFunc():
             # Call get_comments function for each video
             comments = self.get_comments(video_id)
             if comments:
-                self.video_data[video_id].append({'comment_log' : comments})
+                self.video_data[video_id].append({'comment_log': comments})
                 print(f"Comments loaded for video ID {video_id}")
+
+                # Extract video title and create a valid filename
+                video_title = self.video_data[video_id][0]['title']
+                safe_title = "".join(x for x in video_title if (x.isalnum() or x in "._- "))
+                modified_file_name = f"{safe_title}_comments.txt"
+
+                # Save comments to the file
+                with open(modified_file_name, 'w', encoding='utf-8') as f:
+                    for comment in comments:
+                        f.write(f"{comment}\n")
+                print(f"Comments saved to {modified_file_name}")
             else:
                 print(f"No comments found or unable to load comments for video ID {video_id}")
-        
-        # Extract filename and extension
-        filename, file_extension = os.path.splitext(self.file_name)
-        
-        # Append "_c" to filename and add the extension back
-        modified_file_name = filename + "_c" + file_extension
-        
-        # Save the data to the modified file name
-        self.save_video_data_to_csv(modified_file_name)
-        print(f"saved to {modified_file_name}")
+
 
 
     def get_comments(self, video_id, seperate_save=False, filename = ""):
@@ -1410,6 +1643,80 @@ class YTFunc():
         else:
             self.logger.warning(f"Video ID {video_id} not found in video_data_profile.")
 
+    def analyze_comments(self):
+
+        for video_id, video_entries in self.video_data.items():
+            for video_entry in video_entries:
+                if 'comment_log' in video_entry:
+                    comments_text = "\n".join(video_entry['comment_log'])
+
+                    # Prompt to analyze the comments
+                    prompt = (f"Based on the following comments:\n{comments_text}\n"
+                            "Identify the most popular scenes and what people enjoyed about them. "
+                            "Provide a concicse summary around popular topics")
+
+                    
+                    response = self.gpt_client.chat.completions.create(
+                        model="gpt-4o-mini",
+                        messages=[
+                        {"role": "system", "content": "You are expert consultant on youtube content/comments and public opinion"},
+                        {"role": "user", "content": prompt}
+                    ],
+                        max_tokens=2000
+                    )
+
+                    
+                    analysis = response.choices[0].message.content.strip()
+                    print(f"Analysis for video ID {video_id} Completed \n Results: {analysis}")
+
+                    # Append the analysis to the list of dictionaries for this video
+                    video_entry['comment_analysis'] = analysis
+                    print(f'Added comment analysis succuesfully')
+
+    def ask_gpt(self, question):
+        response = self.gpt_client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": "You are a helpful expert youtube consultant servant"},
+                {"role": "user", "content": question}
+            ],
+            max_tokens=2000
+        )
+
+        answer = response.choices[0].message.content.strip()
+        return answer
+    
+    def generate_image(self, prompt):
+        response = self.gpt_client.images.generate(
+            model="dall-e-3",
+            prompt=prompt,
+            quality="standard",
+            size="1024x1024",  # Image size
+            n=1,  # Number of images to generate
+        )
+        return response.data[0].url
+    
+    def generate_variation(self, image, number=1):
+        response = self.gpt_client.images.create_variation(
+        model="dall-e-2",
+        image=open(image, "rb"),
+        n=number,
+        size="1024x1024"
+        )
+
+        return response.data[0].url
+
+    def save_image(self, image_url, prompt):
+        # Create the filename based on the first 8 letters of the prompt
+        filename = f"{prompt[:8].replace(' ', '_')}.png"
+        # Download the image
+        response = requests.get(image_url)
+        if response.status_code == 200:
+            with open(filename, 'wb') as f:
+                f.write(response.content)
+            print(f"Image saved as {filename}")
+        else:
+            print("Failed to download image")
 
     def calculate_ratio(self, numerator, denominator):
         """
@@ -2442,25 +2749,48 @@ class YTFunc():
                 if video_data['subject'] == subject:
                     video_count += 1
                     try:
-                        combined_text = video_data['title'] + ' ' + video_data['description'] + ' ' + ' '.join(video_data['tags'])
-                        if not isinstance(combined_text, str):
-                            self.logger.error(f"combined_text is not a string after concatenation. It is {type(combined_text)} with length of {len(combined_text)}")
-                            #combined_text = str(combined_text)
-                    except TypeError as e:
-                        self.logger.info(f"combined_text is not a String. It is {type(combined_text)}\n With length of {len(combined_text)}")
-                        self.logger.info(f"Type for title: {type(video_data['title'])} + and length of {len(video_data['title'])}")
-                        self.logger.info(f"Type for description: {type(video_data['description'])} + and length of {len(video_data['description'])}")
-                        self.logger.info(f"Type for tags: {type(video_data['tags'])} + and length of {len(video_data['tags'])}")
-                        print(f"Error with video data: {video_id}")
-                        raise e
-                    # add transcripts
-                    if 'transcript' in video_data:
-                        combined_text += ' ' + str(video_data['transcript'])
-                    # add comments
-                    if 'comments' in video_data:
-                        combined_text += ' ' + str(video_data['comments'])
+                        title = str(video_data['title']) if 'title' in video_data else ''
+                        description = str(video_data['description']) if 'description' in video_data else ''
+                        tags = ' '.join(map(str, video_data['tags'])) if 'tags' in video_data and isinstance(video_data['tags'], list) else ''
+                        combined_text = title + ' ' + description + ' ' + tags
+                        if 'transcript' in video_data:
+                            combined_text += ' ' + str(video_data['transcript'])
+                        if 'comments' in video_data:
+                            combined_text += ' ' + str(video_data['comments'])
 
-                    all_text += ' ' + combined_text
+
+                    except TypeError as e:
+                            combined_text_type = type(combined_text)
+                            video_title_type = type(video_data['title'])
+                            video_description_type = type(video_data['description'])
+                            video_tags_type = type(video_data['tags'])
+
+                            self.logger.info(f"combined_text is not a String. It is {combined_text_type}")
+                            if combined_text_type == str:
+                                self.logger.info(f"With length of {len(combined_text)}")
+
+                            self.logger.info(f"Type for title: {video_title_type}")
+                            if video_title_type == str:
+                                self.logger.info(f"and length of {len(video_data['title'])}")
+
+                            self.logger.info(f"Type for description: {video_description_type}")
+                            if video_description_type == str:
+                                self.logger.info(f"and length of {len(video_data['description'])}")
+
+                            self.logger.info(f"Type for tags: {video_tags_type}")
+                            if video_tags_type == list:
+                                self.logger.info(f"and length of {len(video_data['tags'])}")
+
+                            print(f"Error with video data: {video_id}")
+                            raise e
+                    # add transcripts
+            if 'transcript' in video_data:
+                combined_text += ' ' + str(video_data['transcript'])
+            # add comments
+            if 'comments' in video_data:
+                combined_text += ' ' + str(video_data['comments'])
+
+            all_text += ' ' + combined_text
         # Filter out words with less than four characters
         words = re.findall(r'\b\w{4,}\b', all_text.lower())
 
@@ -2507,21 +2837,31 @@ class YTFunc():
         else:
             plt.show()
 
-    def plot_video_metrics(self, video_list, cutoff=35):
+    def plot_video_metrics(self, video_list, cutoff=35, sort_by='like_count'):
         """
         Plot metrics (view count, like count, comment count) for a list of videos.
 
         Parameters:
-        video_data_profile (dict): A dictionary containing video data.
         video_list (list): A list of video IDs for which metrics will be plotted.
         cutoff (int): The maximum number of videos to include in the plot.
+        sort_by (str): The metric by which to sort the videos (e.g., 'like_count', 'view_count', 'comment_count').
         """
         if not video_list:
             print("No videos provided for plotting.")
             return
 
-        # Sort the video list by like count
-        video_list.sort(key=lambda vid: -sum(int(self.safe_int_conversion(data['like_count']))for data in self.video_data[vid]))
+        # Convert video_list to a list if it is not already
+        if not isinstance(video_list, list):
+            video_list = list(video_list)
+
+        # Ensure sort_by is a valid metric
+        valid_metrics = ['view_count', 'like_count', 'comment_count']
+        if sort_by not in valid_metrics:
+            print(f"Invalid sort_by value: {sort_by}. Valid options are {valid_metrics}.")
+            return
+
+        # Sort the video list by the specified metric
+        video_list.sort(key=lambda vid: -sum(int(self.safe_int_conversion(data[sort_by])) for data in self.video_data[vid]))
 
         # Limit the number of videos to the cutoff
         video_list = video_list[:cutoff]
@@ -2529,17 +2869,17 @@ class YTFunc():
         num_metrics = 3  # View count, like count, comment count
         num_videos = len(video_list)
 
-        fig, axes = plt.subplots(num_metrics, 1, figsize=(10, 8*num_metrics))
+        fig, axes = plt.subplots(num_metrics, 1, figsize=(10, 8 * num_metrics))
 
         video_titles = []
         video_ids = []
 
-        for i, metric in enumerate(['view_count', 'like_count', 'comment_count']):
+        for i, metric in enumerate(valid_metrics):
             metric_data = [sum(self.safe_int_conversion(data[metric]) for data in self.video_data[vid]) for vid in video_list]
 
             axes[i].bar(range(num_videos), metric_data, color='b', alpha=0.7)
             axes[i].set_ylabel(metric.capitalize())
-            axes[i].set_title(f'{metric.capitalize()} for Top {num_videos} Videos (Sorted by Likes)')
+            axes[i].set_title(f'{metric.capitalize()} for Top {num_videos} Videos (Sorted by {sort_by.replace("_", " ").capitalize()})')
 
             # Collect video titles and IDs for the legend
             for vid in video_list:
@@ -2548,18 +2888,14 @@ class YTFunc():
                     video_ids.append(vid)
             video_ids.extend([vid for vid in video_list])
 
-        # Add a legend mapping video numbers to titles and IDs
-
-        #NEXT 2 LINES Are for adding a dynamic legend, seemed capped at 3 but no space
-        #legend_labels = [f"{i+1}: {title} ({vid})" for i, (title, vid) in enumerate(zip(video_titles, video_ids))]
-        #fig.legend(legend_labels, loc='upper right', bbox_to_anchor=(1.15, 1.0))
-
         # Adjust spacing for the legend
         plt.subplots_adjust(right=0.8)
 
         plt.tight_layout()
         plt.subplots_adjust(top=0.9, hspace=0.3)
         plt.show()
+
+
 
     def filter_videos_by_criteria(self, filter_type, min_threshold=None, max_threshold=None):
         """
@@ -3104,6 +3440,7 @@ class YTFunc():
             print("No data loaded yet. Must call load_data_from_csv('filename')")
             return
         return data_list
+    
     def save_data_to_txt(self, data, file_name, directory=None,):
         """Save data from a column/field to a .txt file.
 
@@ -3317,10 +3654,30 @@ yt = YTFunc()
 #yt.analyze_transcripts()
 
 
-yt.merge_csv_files(["seo_1_c.csv", "seo_1_ts.csv"]).to_csv("seo_1_c_ts.csv")
+#yt.load_video_data_from_csv("paddy_gallow_strategy.csv")
+#yt.plot_views_to_title_chars_scatter("strategey")
+#yt.plot_views_title_length_line_chart("strategey")
+#yt.plot_top_tags_pie_chart("strategey")
+#yt.plot_word_cloud_titles("strategey")
+#yt.plot_common_words_in_titles("strategy")
+#yt.plot_word_cloud_all("strategey")
+#yt.plot_word_cloud_tags("strategey")
+#yt.plot_video_metrics(yt.video_data.keys(), sort_by="view_count")
+
+#
+# yt.download_youtube_clip("https://youtu.be/HDzhA_UFrnA?si=gbJOboenmJxBLvXo", "00:30:18", "00:30:35", "ig-ceo-advertising-business-attention.mp4")
+#yt.get_top_videos("Viral Video Editing", max_results=5)
+#yt.get_all_comments()
+#yt.analyze_comments()
+#yt.get_transcripts(yt.video_data.keys())
+#yt.analyze_transcripts()
+#yt.save_video_data_to_csv("viral-script-writing.csv")
+
+#yt.download_youtube_audio_clip("https://www.youtube.com/watch?v=FVHLY0fiKXI", "grateful.mp3")
 
 
+#yt.load_video_data_from_csv("video_ads_0_ts.csv")
+#yt.oai_thumbnails_to_csv(20, "video_ads_0_thumbnail_analysis.csv")
 
-
-
-
+#yt.download_video("https://www.youtube.com/watch?v=Fxe5ImKqBA4", "jack_gordon_tikok_algorithm.mp4")
+yt.extract_images("/home/dell/Videos/yt-dl/jack_gordon_tiktok_algorithm.mp4", "video_frames_extraction_10fps", fps = 10, duration = 10)
