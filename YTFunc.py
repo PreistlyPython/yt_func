@@ -68,12 +68,14 @@ class YTFunc():
         self.video_data = {} # a dictionary of keys = video_ids values = dictionarys containing data relating to video.
         self.yt_v3_key = os.getenv("GOOGLE_API_KEY")
         self.openai_key =  os.getenv("OPENAI_API_KEY")
+        self.org = os.getenv("ORGANIZATION_ID")
+        self.project - os.getenv("PROJECT_ID")
         self.youtube = build('youtube', 'v3', developerKey = self.yt_v3_key)
         openai.api_key = self.openai_key
         self.gpt_client = openai.OpenAI(
         api_key=self.openai_key,
-        organization='org-zlvexewsMwb1sDoESZRaNq6u',
-        project='proj_Y9r8e8wUWckQGpcx316JvNq7'
+        organization=self.org,
+        project=self.project
         )
         self.valid_videos = [] 
         self.pp = pprint.PrettyPrinter(indent=4)
